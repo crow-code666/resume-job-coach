@@ -6,58 +6,40 @@ from src.matching.skill_extractor import SkillExtractor
 from src.matching.job_matcher import JobMatcher
 
 
-# -------------------- PAGE CONFIGURATION --------------------
-
 st.set_page_config(
     page_title="Resume Job Coach",
     page_icon="📄",
-    layout="wide"
+    layout="wide",
 )
-
-# -------------------- INITIALIZATION --------------------
 
 parser = ResumeParser()
 skill_extractor = SkillExtractor()
 job_matcher = JobMatcher()
 
-
-# -------------------- HEADER --------------------
-
 st.title("📄 Resume–Job Matching and Skill-Gap Coach")
-
 st.write(
-    "Upload your resume, enter a target job description, "
-    "and discover how your skills match the job requirements."
+    "Understand how your resume compares with a target job, "
+    "including required skills, preferred skills and important keywords."
 )
 
 st.divider()
-
-
-# -------------------- INPUTS --------------------
 
 st.header("1. Upload Your Resume")
 
 uploaded_file = st.file_uploader(
     "Choose your resume",
-    type=["pdf", "docx"]
+    type=["pdf", "docx"],
 )
 
-st.header("2. Enter the Job Description")
+st.header("2. Target Job Description")
 
 job_description = st.text_area(
     "Paste the complete job description",
-    height=220,
-    placeholder="Paste the job description here..."
+    height=250,
+    placeholder="Paste the job description here...",
 )
 
-
-# -------------------- ANALYSIS BUTTON --------------------
-
-if st.button(
-    "Analyze Resume and Match Job",
-    type="primary",
-    use_container_width=True
-):
+if st.button("Analyze Resume and Job", type="primary", use_container_width=True):
 
     if uploaded_file is None:
         st.error("Please upload your resume.")
@@ -68,41 +50,33 @@ if st.button(
     else:
         try:
             with st.spinner("Analyzing resume and job requirements..."):
-
-                # Extract resume text
                 resume_text = parser.extract_text(uploaded_file)
 
-                # Extract skills from resume
                 resume_skills = skill_extractor.extract_skills(
                     resume_text
                 )
 
-                # Extract skills from job description
-                job_skills = skill_extractor.extract_skills(
+                job_analysis = skill_extractor.analyze_job_description(
                     job_description
                 )
 
-                # Extract resume sections
                 resume_sections = skill_extractor.extract_sections(
                     resume_text
                 )
 
-                # Compare resume and job skills
                 match_results = job_matcher.compare(
                     resume_skills,
-                    job_skills
+                    job_analysis["required_skills"],
                 )
 
-            # Save results
             st.session_state["resume_text"] = resume_text
             st.session_state["resume_skills"] = resume_skills
-            st.session_state["job_skills"] = job_skills
+            st.session_state["job_analysis"] = job_analysis
             st.session_state["resume_sections"] = resume_sections
             st.session_state["match_results"] = match_results
-            st.session_state["job_description"] = job_description
             st.session_state["resume_filename"] = uploaded_file.name
 
-            st.success("Resume and job analysis completed!")
+            st.success("Analysis completed successfully!")
 
         except ValueError as error:
             st.error(str(error))
@@ -112,156 +86,117 @@ if st.button(
             st.exception(error)
 
 
-# -------------------- RESULTS DASHBOARD --------------------
-
 if "match_results" in st.session_state:
 
     results = st.session_state["match_results"]
+    analysis = st.session_state["job_analysis"]
     resume_skills = st.session_state["resume_skills"]
-    job_skills = st.session_state["job_skills"]
-    resume_sections = st.session_state["resume_sections"]
+    sections = st.session_state["resume_sections"]
 
     st.divider()
     st.header("📊 Job Matching Dashboard")
 
-    # Check if job description contains recognized skills
+    st.subheader("1. Required Skill Coverage")
+
     if results["coverage"] is None:
-
         st.warning(
-            "No skills from our current skill database were detected "
-            "in the job description. Try a description containing "
-            "specific technologies or skills."
+            "No skills from the current skill database were detected "
+            "in the required job description."
         )
-
     else:
-
-        # -------------------- MATCH SCORE --------------------
-
-        st.subheader("1. Skill Coverage")
-
         col1, col2, col3 = st.columns(3)
 
-        with col1:
-            st.metric(
-                "Skill Coverage",
-                f"{results['coverage']}%"
-            )
-
-        with col2:
-            st.metric(
-                "Matched Skills",
-                results["total_matched"]
-            )
-
-        with col3:
-            st.metric(
-                "Missing Skills",
-                results["total_missing"]
-            )
+        col1.metric("Required Skill Coverage", f"{results['coverage']}%")
+        col2.metric("Matched Skills", results["total_matched"])
+        col3.metric("Missing Skills", results["total_missing"])
 
         st.progress(results["coverage"] / 100)
 
         st.caption(
-            "Skill coverage = detected job skills found in the resume "
-            "divided by all detected job skills. This is not an overall "
-            "measure of employability or hiring probability."
+            "This is the percentage of recognized required skills "
+            "found in the resume. It is not a hiring probability."
         )
 
-        # -------------------- MATCHED SKILLS --------------------
+    st.subheader("2. Required Skills")
 
-        st.subheader("2. Matched Skills")
+    if results["matched_skills"]:
+        st.success("Matched: " + ", ".join(results["matched_skills"]))
 
-        if results["matched_skills"]:
-            st.success(
-                "Skills found in both the resume and job description:"
-            )
-            st.write(" • ".join(results["matched_skills"]))
+    if results["missing_skills"]:
+        st.warning("Missing: " + ", ".join(results["missing_skills"]))
+
+    if not results["matched_skills"] and not results["missing_skills"]:
+        st.info("No recognized required skills were found.")
+
+    st.subheader("3. Preferred Skills")
+
+    preferred = analysis["preferred_skills"]
+
+    if preferred:
+        for category, skills in preferred.items():
+            st.write(f"**{category}:** {', '.join(skills)}")
+    else:
+        st.info("No preferred skills were detected.")
+
+    st.subheader("4. Important Job Keywords")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Required keywords**")
+        if analysis["required_keywords"]:
+            st.write(", ".join(analysis["required_keywords"]))
         else:
-            st.info("No matching skills were detected.")
+            st.info("No recognized required keywords found.")
 
-        # -------------------- MISSING SKILLS --------------------
-
-        st.subheader("3. Missing Skills")
-
-        if results["missing_skills"]:
-            st.warning(
-                "These job requirements were not detected in the resume:"
-            )
-            st.write(" • ".join(results["missing_skills"]))
+    with col2:
+        st.markdown("**Preferred keywords**")
+        if analysis["preferred_keywords"]:
+            st.write(", ".join(analysis["preferred_keywords"]))
         else:
-            st.success(
-                "All detected job skills were found in the resume."
-            )
+            st.info("No recognized preferred keywords found.")
 
-        # -------------------- ADDITIONAL SKILLS --------------------
+    st.subheader("5. Qualifications and Experience")
 
-        st.subheader("4. Additional Resume Skills")
+    if analysis["qualifications"]:
+        for item in analysis["qualifications"]:
+            st.write(f"• {item}")
+    else:
+        st.info("No clear qualification or experience criteria detected.")
 
-        if results["additional_skills"]:
-            st.write(
-                "These skills were detected in your resume but not "
-                "in the job description:"
-            )
-            st.write(" • ".join(results["additional_skills"]))
-        else:
-            st.info("No additional skills were detected.")
-
-        # -------------------- CATEGORY ANALYSIS --------------------
-
-        st.subheader("5. Category-wise Matching")
-
-        for category, details in results["category_results"].items():
-
-            with st.expander(category, expanded=True):
-
-                st.write(
-                    f"Required skills: {details['required_count']}"
-                )
-
-                if details["matched"]:
-                    st.success(
-                        "Matched: " + ", ".join(details["matched"])
-                    )
-
-                if details["missing"]:
-                    st.warning(
-                        "Missing: " + ", ".join(details["missing"])
-                    )
-
-        # -------------------- RESUME DETAILS --------------------
+    if not analysis["section_headings_found"]:
+        st.caption(
+            "No recognizable required/preferred headings were found. "
+            "Detected skills were treated as required by default."
+        )
 
     st.divider()
-    st.header("📄 Resume Details")
+    st.header("📄 Resume Information")
 
-    with st.expander("Identified Resume Skills"):
+    st.subheader("Detected Resume Skills")
+
+    if resume_skills:
         for category, skills in resume_skills.items():
             st.write(f"**{category}:** {', '.join(skills)}")
+    else:
+        st.info("No predefined skills were detected.")
 
     with st.expander("Education"):
-        education = resume_sections["Education"]
-
-        if education:
-            for item in education:
-                st.write(f"• {item}")
-        else:
+        for item in sections["Education"]:
+            st.write(f"• {item}")
+        if not sections["Education"]:
             st.info("No clear education section detected.")
 
     with st.expander("Experience"):
-        experience = resume_sections["Experience"]
-
-        if experience:
-            for item in experience:
-                st.write(f"• {item}")
-        else:
+        for item in sections["Experience"]:
+            st.write(f"• {item}")
+        if not sections["Experience"]:
             st.info("No clear experience section detected.")
 
     with st.expander("Projects"):
-        projects = resume_sections["Projects"]
-
-        if projects:
-            for item in projects:
-                st.write(f"• {item}")
-        else:
+        for item in sections["Projects"]:
+            st.write(f"• {item}")
+        if not sections["Projects"]:
             st.info("No clear project section detected.")
 
     with st.expander("Complete Extracted Resume Text"):
@@ -269,12 +204,12 @@ if "match_results" in st.session_state:
             "Resume content",
             value=st.session_state["resume_text"],
             height=300,
-            disabled=True
+            disabled=True,
         )
 
     st.download_button(
         "Download Extracted Resume Text",
         data=st.session_state["resume_text"],
         file_name="extracted_resume.txt",
-        mime="text/plain"
+        mime="text/plain",
     )

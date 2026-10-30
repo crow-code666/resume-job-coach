@@ -3,7 +3,7 @@ import re
 
 
 class SkillExtractor:
-    """Extract resume skills and analyze job-description requirements."""
+    """Extract skills and analyze job-description requirements."""
 
     SKILL_DATABASE = {
         "Programming Languages": {
@@ -122,12 +122,12 @@ class SkillExtractor:
     PREFERRED_HEADINGS = (
         "preferred qualifications",
         "preferred skills",
+        "preferred requirements",
         "good to have",
         "nice to have",
         "bonus skills",
         "desired skills",
         "additional skills",
-        "preferred requirements",
     )
 
     REQUIRED_HEADINGS = (
@@ -138,28 +138,28 @@ class SkillExtractor:
         "must have",
         "mandatory skills",
         "what you need",
-        "basic qualifications",
     )
+
+    @staticmethod
+    def _contains_term(text: str, term: str) -> bool:
+        """Check for a term without matching it inside unrelated words."""
+        pattern = (
+            r"(?<![a-z0-9])"
+            + re.escape(term.lower())
+            + r"(?![a-z0-9])"
+        )
+        return bool(re.search(pattern, text.lower()))
 
     def _find_terms(self, text: str, database: dict) -> dict:
         """Find known terms and return them grouped by category."""
-        text_lower = text.lower()
         results = {}
 
         for category, items in database.items():
             found = []
 
             for display_name, aliases in items.items():
-                for alias in aliases:
-                    pattern = (
-                        r"(?<![a-z0-9])"
-                        + re.escape(alias.lower())
-                        + r"(?![a-z0-9])"
-                    )
-
-                    if re.search(pattern, text_lower):
-                        found.append(display_name)
-                        break
+                if any(self._contains_term(text, alias) for alias in aliases):
+                    found.append(display_name)
 
             if found:
                 results[category] = sorted(set(found))
@@ -167,24 +167,16 @@ class SkillExtractor:
         return results
 
     def extract_skills(self, text: str) -> dict:
-        """Find predefined skills in resume or job-description text."""
+        """Extract predefined skills from resume or job-description text."""
         return self._find_terms(text, self.SKILL_DATABASE)
 
     def extract_keywords(self, text: str) -> list:
-        """Find important job-related phrases."""
+        """Extract important job-related phrases."""
         found = []
 
         for display_name, aliases in self.JOB_KEYWORDS.items():
-            for alias in aliases:
-                pattern = (
-                    r"(?<![a-z0-9])"
-                    + re.escape(alias.lower())
-                    + r"(?![a-z0-9])"
-                )
-
-                if re.search(pattern, text.lower()):
-                    found.append(display_name)
-                    break
+            if any(self._contains_term(text, alias) for alias in aliases):
+                found.append(display_name)
 
         return sorted(set(found))
 
@@ -192,8 +184,8 @@ class SkillExtractor:
         """
         Separate required and preferred skills and keywords.
 
-        If the job description does not contain recognizable requirement
-        headings, detected skills are treated as required by default.
+        When no recognizable requirement headings are found,
+        detected skills are treated as required by default.
         """
         required_lines = []
         preferred_lines = []
@@ -228,7 +220,6 @@ class SkillExtractor:
                 headings_found = True
                 continue
 
-            # Also recognize preferred wording within individual bullets.
             if re.search(
                 r"\b(preferred|nice to have|good to have|bonus)\b",
                 line,
@@ -240,7 +231,6 @@ class SkillExtractor:
             else:
                 required_lines.append(line)
 
-        # If there are no section headings, use the complete description.
         if not headings_found:
             required_lines = [text]
             preferred_lines = []
@@ -251,7 +241,7 @@ class SkillExtractor:
         required_skills = self.extract_skills(required_text)
         preferred_skills = self.extract_skills(preferred_text)
 
-        # A skill listed as required should not also be counted as preferred.
+        # A skill listed as required should not also be preferred.
         required_flat = {
             skill
             for skills in required_skills.values()
@@ -268,20 +258,18 @@ class SkillExtractor:
             if not preferred_skills[category]:
                 del preferred_skills[category]
 
-        qualifications = self._extract_qualifications(text)
-
         return {
             "required_skills": required_skills,
             "preferred_skills": preferred_skills,
             "required_keywords": self.extract_keywords(required_text),
             "preferred_keywords": self.extract_keywords(preferred_text),
-            "qualifications": qualifications,
+            "qualifications": self._extract_qualifications(text),
             "section_headings_found": headings_found,
         }
 
     @staticmethod
     def _extract_qualifications(text: str) -> list:
-        """Find lines that appear to mention education or experience criteria."""
+        """Find lines mentioning likely education or experience criteria."""
         patterns = [
             r"\b(bachelor|master|diploma|degree|b\.?tech|m\.?tech|"
             r"bca|mca|b\.?sc|m\.?sc|graduate|graduation)\b",
