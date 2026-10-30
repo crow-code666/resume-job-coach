@@ -3,7 +3,7 @@ import re
 
 
 class SkillExtractor:
-    """Lightweight resume skill and section extraction engine."""
+    """Extract resume skills and analyze job-description requirements."""
 
     SKILL_DATABASE = {
         "Programming Languages": {
@@ -12,7 +12,7 @@ class SkillExtractor:
             "C": ["c programming", "programming in c"],
             "C++": ["c++"],
             "C#": ["c#"],
-            "JavaScript": ["javascript", "js"],
+            "JavaScript": ["javascript"],
             "TypeScript": ["typescript"],
             "PHP": ["php"],
             "R": ["r programming"],
@@ -70,6 +70,33 @@ class SkillExtractor:
         },
     }
 
+    JOB_KEYWORDS = {
+        "REST APIs": ["rest api", "restful api", "rest apis"],
+        "API Development": ["api development", "developing apis"],
+        "Database Management": ["database management", "database design"],
+        "Data Structures": ["data structures"],
+        "Algorithms": ["algorithms", "algorithm design"],
+        "Object-Oriented Programming": [
+            "object oriented programming",
+            "object-oriented programming",
+            "oops",
+        ],
+        "Software Development": ["software development"],
+        "Software Testing": ["software testing", "unit testing"],
+        "Debugging": ["debugging", "debug code"],
+        "Version Control": ["version control"],
+        "Agile Methodology": ["agile", "scrum"],
+        "Cloud Computing": ["cloud computing"],
+        "Machine Learning": ["machine learning"],
+        "Data Analysis": ["data analysis", "data analytics"],
+        "Problem Solving": ["problem solving", "problem-solving"],
+        "Communication": ["communication skills", "communication"],
+        "Team Collaboration": ["team collaboration", "work in a team"],
+        "CI/CD": ["ci/cd", "continuous integration", "continuous deployment"],
+        "Deployment": ["deployment", "deploy applications"],
+        "SDLC": ["software development life cycle", "sdlc"],
+    }
+
     SECTION_HEADINGS = {
         "education": [
             "education",
@@ -92,26 +119,188 @@ class SkillExtractor:
         ],
     }
 
-    def extract_skills(self, text: str) -> dict:
-        """Find skills mentioned in the supplied resume text."""
+    PREFERRED_HEADINGS = (
+        "preferred qualifications",
+        "preferred skills",
+        "good to have",
+        "nice to have",
+        "bonus skills",
+        "desired skills",
+        "additional skills",
+        "preferred requirements",
+    )
+
+    REQUIRED_HEADINGS = (
+        "required qualifications",
+        "required skills",
+        "requirements",
+        "minimum qualifications",
+        "must have",
+        "mandatory skills",
+        "what you need",
+        "basic qualifications",
+    )
+
+    def _find_terms(self, text: str, database: dict) -> dict:
+        """Find known terms and return them grouped by category."""
         text_lower = text.lower()
         results = {}
 
-        for category, skills in self.SKILL_DATABASE.items():
+        for category, items in database.items():
             found = []
 
-            for skill_name, keywords in skills.items():
-                for keyword in keywords:
-                    pattern = r"(?<![a-z0-9])" + re.escape(keyword) + r"(?![a-z0-9])"
+            for display_name, aliases in items.items():
+                for alias in aliases:
+                    pattern = (
+                        r"(?<![a-z0-9])"
+                        + re.escape(alias.lower())
+                        + r"(?![a-z0-9])"
+                    )
 
                     if re.search(pattern, text_lower):
-                        found.append(skill_name)
+                        found.append(display_name)
                         break
 
             if found:
                 results[category] = sorted(set(found))
 
         return results
+
+    def extract_skills(self, text: str) -> dict:
+        """Find predefined skills in resume or job-description text."""
+        return self._find_terms(text, self.SKILL_DATABASE)
+
+    def extract_keywords(self, text: str) -> list:
+        """Find important job-related phrases."""
+        found = []
+
+        for display_name, aliases in self.JOB_KEYWORDS.items():
+            for alias in aliases:
+                pattern = (
+                    r"(?<![a-z0-9])"
+                    + re.escape(alias.lower())
+                    + r"(?![a-z0-9])"
+                )
+
+                if re.search(pattern, text.lower()):
+                    found.append(display_name)
+                    break
+
+        return sorted(set(found))
+
+    def analyze_job_description(self, text: str) -> dict:
+        """
+        Separate required and preferred skills and keywords.
+
+        If the job description does not contain recognizable requirement
+        headings, detected skills are treated as required by default.
+        """
+        required_lines = []
+        preferred_lines = []
+        current_group = "required"
+        headings_found = False
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+
+            if not line:
+                continue
+
+            normalized = re.sub(
+                r"^[\s•*\-–—\d.)]+", "", line.lower()
+            ).strip(" :")
+
+            if any(
+                normalized == heading
+                or normalized.startswith(heading + " ")
+                for heading in self.PREFERRED_HEADINGS
+            ):
+                current_group = "preferred"
+                headings_found = True
+                continue
+
+            if any(
+                normalized == heading
+                or normalized.startswith(heading + " ")
+                for heading in self.REQUIRED_HEADINGS
+            ):
+                current_group = "required"
+                headings_found = True
+                continue
+
+            # Also recognize preferred wording within individual bullets.
+            if re.search(
+                r"\b(preferred|nice to have|good to have|bonus)\b",
+                line,
+                re.IGNORECASE,
+            ):
+                preferred_lines.append(line)
+            elif current_group == "preferred":
+                preferred_lines.append(line)
+            else:
+                required_lines.append(line)
+
+        # If there are no section headings, use the complete description.
+        if not headings_found:
+            required_lines = [text]
+            preferred_lines = []
+
+        required_text = "\n".join(required_lines)
+        preferred_text = "\n".join(preferred_lines)
+
+        required_skills = self.extract_skills(required_text)
+        preferred_skills = self.extract_skills(preferred_text)
+
+        # A skill listed as required should not also be counted as preferred.
+        required_flat = {
+            skill
+            for skills in required_skills.values()
+            for skill in skills
+        }
+
+        for category in list(preferred_skills):
+            preferred_skills[category] = [
+                skill
+                for skill in preferred_skills[category]
+                if skill not in required_flat
+            ]
+
+            if not preferred_skills[category]:
+                del preferred_skills[category]
+
+        qualifications = self._extract_qualifications(text)
+
+        return {
+            "required_skills": required_skills,
+            "preferred_skills": preferred_skills,
+            "required_keywords": self.extract_keywords(required_text),
+            "preferred_keywords": self.extract_keywords(preferred_text),
+            "qualifications": qualifications,
+            "section_headings_found": headings_found,
+        }
+
+    @staticmethod
+    def _extract_qualifications(text: str) -> list:
+        """Find lines that appear to mention education or experience criteria."""
+        patterns = [
+            r"\b(bachelor|master|diploma|degree|b\.?tech|m\.?tech|"
+            r"bca|mca|b\.?sc|m\.?sc|graduate|graduation)\b",
+            r"\b\d+\+?\s*(years?|yrs?)\b",
+            r"\b(final[- ]year|freshers?|entry[- ]level)\b",
+        ]
+
+        results = []
+
+        for line in text.splitlines():
+            cleaned = line.strip()
+
+            if any(
+                re.search(pattern, cleaned, re.IGNORECASE)
+                for pattern in patterns
+            ):
+                results.append(cleaned)
+
+        return list(dict.fromkeys(results))[:20]
 
     def extract_sections(self, text: str) -> dict:
         """Extract likely education, experience and project sections."""
@@ -126,7 +315,9 @@ class SkillExtractor:
         active_section = None
 
         for line in lines:
-            normalized = re.sub(r"[^a-z ]", "", line.lower()).strip()
+            normalized = re.sub(
+                r"[^a-z ]", "", line.lower()
+            ).strip()
 
             matched_section = None
 
@@ -144,10 +335,8 @@ class SkillExtractor:
                 continue
 
             if active_section:
-                display_name = active_section.capitalize()
-                sections[display_name].append(line)
+                sections[active_section.capitalize()].append(line)
 
-        # Fallback: identify likely education lines if no education heading exists.
         if not sections["Education"]:
             education_terms = [
                 "bachelor", "master", "diploma", "degree",
@@ -160,7 +349,6 @@ class SkillExtractor:
                 if any(term in line.lower() for term in education_terms)
             ]
 
-        # Fallback: identify likely project lines if no project heading exists.
         if not sections["Projects"]:
             sections["Projects"] = [
                 line for line in lines
@@ -174,7 +362,6 @@ class SkillExtractor:
 
     @staticmethod
     def _is_heading(line: str) -> bool:
-        """Check whether a line looks like another resume section heading."""
         known_headings = {
             "summary",
             "profile",
