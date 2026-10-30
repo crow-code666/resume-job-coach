@@ -13,23 +13,35 @@ class SemanticMatcher:
     """AI career analysis and live job-market research."""
 
     def __init__(self, model=None):
-        groq_key = os.getenv("GROQ_API_KEY")
-        tavily_key = os.getenv("TAVILY_API_KEY")
+        groq_key = self._get_key("GROQ_API_KEY")
+        tavily_key = self._get_key("TAVILY_API_KEY")
 
         if not groq_key:
-            raise ValueError("GROQ_API_KEY is missing from .env")
-
-        if not tavily_key:
-            raise ValueError("TAVILY_API_KEY is missing from .env")
+            raise ValueError(
+                "GROQ_API_KEY is not configured. Add it to "
+                ".streamlit/secrets.toml or your environment variables."
+            )
 
         self.model = (
             model
             or os.getenv("GROQ_MODEL")
-            or "openai/gpt-oss-120b"
+            or "openai/gpt-oss-20b"
         )
 
         self.client = Groq(api_key=groq_key)
-        self.search_client = TavilyClient(api_key=tavily_key)
+        self.search_client = TavilyClient(api_key=tavily_key) if tavily_key else None
+
+    @staticmethod
+    def _get_key(name):
+        """Read a key from Streamlit secrets first, then environment variables."""
+        try:
+            import streamlit as st
+            value = st.secrets.get(name)
+            if value:
+                return value
+        except Exception:
+            pass
+        return os.getenv(name)
 
     def generate_response(self, system_prompt, user_prompt):
         """Generate an AI response using Groq."""
@@ -66,6 +78,13 @@ class SemanticMatcher:
     def search_web(self, query, max_results=5):
         """Search the web using Tavily."""
 
+        if self.search_client is None:
+            raise ValueError(
+                "TAVILY_API_KEY is not configured. Add it to "
+                ".streamlit/secrets.toml or your environment variables "
+                "to use live market research."
+            )
+
         try:
             response = self.search_client.search(
                 query=query,
@@ -100,6 +119,13 @@ class SemanticMatcher:
 
         if not job_description.strip():
             raise ValueError("Job description cannot be empty.")
+
+        if self.search_client is None:
+            raise ValueError(
+                "TAVILY_API_KEY is not configured. Add it to "
+                ".streamlit/secrets.toml or your environment variables "
+                "to use live market research."
+            )
 
         # Step 1: Identify the target role.
         role_prompt = """

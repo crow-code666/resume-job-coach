@@ -1,8 +1,6 @@
-streamlit
-fastapi
-uvicorn
+streamlit>=1.57
 pdfplumber
 python-docx
-pandas
-numpy
-openai
+python-dotenv
+groq
+tavily-python

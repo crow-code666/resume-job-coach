@@ -1,625 +1,323 @@
+import os
 
 import streamlit as st
 
-from src.resume_parser.parser import ResumeParser
-from src.matching.skill_extractor import SkillExtractor
 from src.matching.job_matcher import JobMatcher
+from src.matching.skill_extractor import SkillExtractor
+from src.resume_parser.parser import ResumeParser
 
-
-# --------------------------------------------------
-# PAGE CONFIGURATION
-# --------------------------------------------------
 
 st.set_page_config(
-    page_title="Resume Job Coach",
-    page_icon="📄",
+    page_title="CareerLens | Career Intelligence",
+    page_icon="◈",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+:root {
+  --bg:#080b17; --panel:#10172a; --panel-2:#141d35; --line:#2a3657;
+  --text:#f2f4ff; --muted:#c2cbe0; --blue:#78a9ff; --purple:#b49aff;
+}
+html,body,[class*="css"] { font-family:'DM Sans',sans-serif; }
+.stApp {
+  color:var(--text);
+  background:
+    radial-gradient(ellipse at 12% 3%,#172c57 0,transparent 31%),
+    radial-gradient(ellipse at 92% 18%,#35205f 0,transparent 30%),
+    var(--bg);
+}
+[data-testid="stHeader"] { background:rgba(8,11,23,.82); }
+.block-container { max-width:1320px; padding-top:2rem; padding-bottom:3rem; }
+[data-testid="stSidebar"] { background:linear-gradient(180deg,#0d1426,#0a1020); border-right:1px solid #293454; }
+h1,h2,h3 { font-family:'Manrope',sans-serif; color:var(--text); letter-spacing:-.035em; }
+h1 { font-size:2.35rem !important; }
+p,label,[data-testid="stCaptionContainer"] { color:var(--muted); }
+[data-testid="stWidgetLabel"] p,[data-testid="stSidebar"] label { color:#f1f3ff !important; font-weight:600; }
+.hero {
+  position:relative; overflow:hidden; isolation:isolate;
+  border:1px solid #3c4773; border-radius:26px; padding:34px 38px; margin-bottom:24px;
+  background:
+    radial-gradient(circle at 83% 10%,#8b6cff42,transparent 30%),
+    radial-gradient(circle at 65% 130%,#368dff40,transparent 43%),
+    linear-gradient(120deg,#101a33,#171431 60%,#111b35);
+  box-shadow:0 18px 55px #0008,0 0 30px #7f66ff12 inset;
+  animation:rise-in .65s cubic-bezier(.2,.7,.2,1) both;
+}
+.hero:after {
+  content:""; position:absolute; z-index:-1; width:24rem; height:24rem; right:-8rem; top:-14rem;
+  border:1px solid #bdabff30; border-radius:50%; box-shadow:0 0 0 32px #bdabff09,0 0 0 64px #bdabff06;
+}
+.hero-kicker,.eyebrow { color:#b9a6ff; text-transform:uppercase; letter-spacing:.16em; font-size:.74rem; font-weight:800; }
+.hero h1 { color:#fff !important; margin:.55rem 0 .4rem; text-shadow:0 0 28px #a892ff35; }
+.hero p { color:#d0d8ee !important; margin:0; max-width:740px; font-size:1.02rem; }
+.gradient-word {
+  background:linear-gradient(95deg,#9dc4ff 5%,#c3aaff 54%,#f0c5ff);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.brand { font-family:'Manrope',sans-serif; font-size:1.2rem; font-weight:800; color:#f3f4ff; letter-spacing:-.04em; padding:.25rem 0 1rem; }
+.brand span { color:#b9a6ff; text-shadow:0 0 18px #9e7bff80; }
+.card,[data-testid="stMetric"] {
+  background:linear-gradient(145deg,#121b30,#0e1527); border:1px solid #2b3858;
+  border-radius:18px; box-shadow:0 10px 32px #0005;
+  animation:rise-in .5s cubic-bezier(.2,.7,.2,1) both;
+  transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease;
+}
+.card { padding:22px 24px; margin:.4rem 0 1rem; }
+.card:hover,[data-testid="stMetric"]:hover { transform:translateY(-3px); border-color:#7564bc; box-shadow:0 14px 34px #0007,0 0 18px #765de21a; }
+[data-testid="stMetric"] { padding:18px 20px; }
+[data-testid="stMetricLabel"] p { color:#c1cbe0 !important; font-weight:600; }
+[data-testid="stMetricValue"] { color:#fff !important; font-family:'Manrope',sans-serif; }
+.pill { display:inline-block; border:1px solid #62519a; border-radius:999px; padding:5px 11px; margin:3px 4px 3px 0; background:#221c3f; color:#ded3ff; font-size:.84rem; font-weight:700; }
+.missing { border-color:#835354; background:#321c2a; color:#ffd0c8; }
+input,textarea,[data-baseweb="select"]>div { background:#0e172b !important; color:#f5f6ff !important; border-color:#354363 !important; }
+input::placeholder,textarea::placeholder { color:#9eabc5 !important; }
+.stButton>button,.stFormSubmitButton>button {
+  border-radius:12px; min-height:2.75rem; font-weight:750 !important;
+  transition:transform .18s ease,box-shadow .18s ease,filter .18s ease;
+}
+.stButton>button:hover,.stFormSubmitButton>button:hover { transform:translateY(-2px); filter:brightness(1.08); }
+.stButton>button[kind="primary"],.stFormSubmitButton>button[kind="primary"],button[data-testid="stBaseButton-primary"] {
+  color:#fff !important; text-shadow:0 1px 2px #160e38; opacity:1 !important;
+  background:linear-gradient(105deg,#425fd0,#7751bd 58%,#965ed3) !important;
+  border:1px solid #a489ef !important; box-shadow:0 8px 24px #603fbd55;
+}
+.stButton>button:not([kind="primary"]),button[data-testid="stBaseButton-secondary"] {
+  color:#f0edff !important; font-weight:700 !important; background:#19233a !important; border:1px solid #465274 !important;
+}
+[data-testid="stRadio"] label { color:#e9e8fa !important; font-weight:650; }
+[data-testid="stExpander"] { background:#10182a; border:1px solid #303d5e; border-radius:14px; transition:border-color .2s ease; }
+[data-testid="stExpander"]:hover { border-color:#806bc4; }
+[data-testid="stExpander"] summary { color:#f1f1ff !important; }
+[data-testid="stProgressBar"]>div>div { background:linear-gradient(90deg,#6d9dff,#b28cff); }
+[data-testid="stAlert"] { background:#171d35; border-color:#51477a; color:#f0ecff; }
+@keyframes rise-in { from {opacity:0; transform:translateY(12px)} to {opacity:1; transform:translateY(0)} }
+@media (prefers-reduced-motion: reduce) {
+  *,*:before,*:after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+}
+</style>
+""", unsafe_allow_html=True)
 
 parser = ResumeParser()
-skill_extractor = SkillExtractor()
-job_matcher = JobMatcher()
+extractor = SkillExtractor()
+matcher = JobMatcher()
 
 
-# --------------------------------------------------
-# HEADER
-# --------------------------------------------------
-
-st.title("Resume–Job Coach")
-
-st.write(
-    "Analyze your resume, research real job-market information, "
-    "identify skill gaps, and prepare for your target career."
-)
-
-st.divider()
+def generate_ai(system_prompt, user_prompt):
+    from src.ai.semantic_matcher import SemanticMatcher
+    return SemanticMatcher().generate_response(system_prompt, user_prompt)
 
 
-# --------------------------------------------------
-# INPUTS
-# --------------------------------------------------
-
-st.header("1. Upload Your Resume")
-
-uploaded_file = st.file_uploader(
-    "Choose your resume",
-    type=["pdf", "docx"],
-    key="resume_upload",
-)
-
-st.header("2. Target Job Description")
-
-job_description = st.text_area(
-    "Paste the complete job description",
-    height=250,
-    placeholder="Paste the job description here...",
-    key="job_description_input",
-)
+def key_is_configured(name):
+    try:
+        return bool(st.secrets.get(name) or os.getenv(name))
+    except Exception:
+        return bool(os.getenv(name))
 
 
-# --------------------------------------------------
-# LIVE JOB MARKET RESEARCH
-# --------------------------------------------------
-
-st.divider()
-st.header("3. Live Job Market Research")
-
-st.write(
-    "Search the internet for current job-market information "
-    "related to the role described in your job description."
-)
-
-if st.button(
-    "Research Job Market with AI",
-    type="primary",
-    use_container_width=True,
-):
-
-    if not job_description.strip():
-
-        st.error("Please enter a job description first.")
-
-    else:
-
-        try:
-
-            from src.ai.semantic_matcher import SemanticMatcher
-
-            with st.spinner(
-                "Searching the internet and analyzing job-market results..."
-            ):
-
-                ai = SemanticMatcher()
-
-                research = ai.research_job_market(
-                    job_description
-                )
-
-                st.session_state["market_research"] = research
-
-            st.success("Job-market research completed.")
-
-        except Exception as error:
-
-            st.error("Unable to complete job-market research.")
-            st.exception(error)
+def show_pills(items, missing=False):
+    if not items:
+        st.caption("Nothing detected yet.")
+        return
+    css = "pill missing" if missing else "pill"
+    safe = [str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for x in items]
+    st.markdown(" ".join(f'<span class="{css}">{x}</span>' for x in safe), unsafe_allow_html=True)
 
 
-# --------------------------------------------------
-# DISPLAY LIVE RESEARCH
-# --------------------------------------------------
-
-if "market_research" in st.session_state:
-
-    research = st.session_state["market_research"]
-
-    st.subheader("Job Market Research Results")
-
-    st.metric(
-        "Search Results Collected",
-        len(research["sources"]),
-    )
-
-    st.markdown(
-        f"**Detected Job Role:** {research['job_role']}"
-    )
-
-    st.markdown(research["report"])
-
-    st.subheader("Research Sources")
-
-    st.caption(
-        "These links were returned by Tavily. Check the original "
-        "pages to verify vacancies, dates and requirements."
-    )
-
-    for index, source in enumerate(research["sources"], start=1):
-
-        with st.expander(
-            f"{index}. {source['title']}"
-        ):
-
-            st.write(source["content"])
-
-            if source["url"]:
-
-                st.markdown(
-                    f"[Open original source]({source['url']})"
-                )
-
-    report_text = research["report"]
-
-    source_text = "\n\n".join(
-        f"{index}. {source['title']}\n"
-        f"{source['url']}\n"
-        f"{source['content']}"
-        for index, source in enumerate(
-            research["sources"],
-            start=1,
-        )
-    )
-
-    st.download_button(
-        "Download Job Market Research",
-        data=(
-            "# Job Market Research\n\n"
-            + report_text
-            + "\n\n# Research Sources\n\n"
-            + source_text
-        ),
-        file_name="job_market_research.md",
-        mime="text/markdown",
-        use_container_width=True,
-    )
+def show_sources(sources):
+    for i, source in enumerate(sources, 1):
+        with st.expander(f"{i:02d} · {source.get('title') or 'Untitled result'}"):
+            st.write(source.get("content", "No preview available."))
+            if source.get("url"):
+                st.markdown(f"[Open original source]({source['url']})")
 
 
-# --------------------------------------------------
-# RESUME AND JOB MATCHING
-# --------------------------------------------------
+with st.sidebar:
+    st.markdown('<div class="brand">◈ Career<span>Lens</span></div>', unsafe_allow_html=True)
+    st.markdown("### PROFILE INPUT")
+    st.caption("Add a resume and target role to get a personalized plan.")
+    with st.form("profile_form", clear_on_submit=False):
+        uploaded_file = st.file_uploader("Resume file", type=["pdf", "docx"], help="PDF and Word documents are supported.")
+        job_description = st.text_area("Target job description", height=200, placeholder="Paste the role description, requirements, and qualifications…")
+        analyze_clicked = st.form_submit_button("✦  Analyze my fit", type="primary", width="stretch")
+    with st.expander("AI setup"):
+        st.write("Career plan and interview generation need Groq. Live Market pulse also needs Tavily.")
+        st.write(f"Groq key: {'✅ configured' if key_is_configured('GROQ_API_KEY') else '⚠️ missing'}")
+        st.write(f"Tavily key: {'✅ configured' if key_is_configured('TAVILY_API_KEY') else 'Optional — needed for Market pulse'}")
+        st.markdown("[Create a Groq API key](https://console.groq.com/keys)")
+        st.markdown("**Run locally in VS Code** — create .streamlit/secrets.toml and add:")
+        st.code('GROQ_API_KEY = "paste-your-key-here"\nTAVILY_API_KEY = "paste-your-tavily-key-here"', language="toml")
+        st.markdown("**Run on Streamlit Cloud** — open your app’s Settings → Secrets, paste the same lines, and save. Restart or reboot the app after adding the key.")
+        st.caption("Tavily is optional unless you use Market pulse. Keep secrets private and never commit secrets.toml.")
+    st.caption("Your resume is processed for this session. AI features send selected text to the configured provider.")
 
-st.divider()
-st.header("4. Resume and Job Matching")
-
-if st.button(
-    "Analyze Resume and Job",
-    type="primary",
-    use_container_width=True,
-):
-
+if analyze_clicked:
     if uploaded_file is None:
-
-        st.error("Please upload your resume.")
-
+        st.session_state["notice_error"] = "Choose a PDF or DOCX resume to continue."
     elif not job_description.strip():
-
-        st.error("Please enter a job description.")
-
+        st.session_state["notice_error"] = "Paste a target job description to continue."
     else:
-
         try:
-
-            with st.spinner("Analyzing your resume..."):
-
+            with st.spinner("Reading your resume and mapping role requirements…"):
                 resume_text = parser.extract_text(uploaded_file)
+                resume_skills = extractor.extract_skills(resume_text)
+                job_analysis = extractor.analyze_job_description(job_description)
+                sections = extractor.extract_sections(resume_text)
+                results = matcher.compare(resume_skills, job_analysis["required_skills"])
+            st.session_state.update(
+                resume_text=resume_text,
+                resume_skills=resume_skills,
+                job_analysis=job_analysis,
+                resume_sections=sections,
+                match_results=results,
+                resume_filename=uploaded_file.name,
+                analyzed_job_description=job_description,
+            )
+            for key in ("market_research", "ai_career_report", "ai_interview_questions"):
+                st.session_state.pop(key, None)
+            st.session_state["notice_success"] = "Your fit analysis is ready."
+        except (ValueError, RuntimeError) as error:
+            st.session_state["notice_error"] = str(error)
+        except Exception:
+            st.session_state["notice_error"] = "We couldn’t read this file. Try a text-based PDF or DOCX document."
 
-                resume_skills = skill_extractor.extract_skills(
-                    resume_text
-                )
+st.markdown("""
+<div class="hero">
+  <div class="hero-kicker">Career intelligence · built around you</div>
+  <h1>Navigate your <span class="gradient-word">next move.</span></h1>
+  <p>Map your experience to the role, reveal the gaps that matter, and turn your next step into a clear plan.</p>
+</div>
+""", unsafe_allow_html=True)
 
-                job_analysis = skill_extractor.analyze_job_description(
-                    job_description
-                )
+if st.session_state.get("notice_error"):
+    st.error(st.session_state.pop("notice_error"))
+if st.session_state.get("notice_success"):
+    st.success(st.session_state.pop("notice_success"))
 
-                resume_sections = skill_extractor.extract_sections(
-                    resume_text
-                )
+page = st.segmented_control("Workspace section", ["Overview", "Market pulse", "Career plan", "Interview lab"], default="Overview", label_visibility="collapsed", key="workspace_page", width="stretch")
 
-                match_results = job_matcher.compare(
-                    resume_skills,
-                    job_analysis["required_skills"],
-                )
-
-            st.session_state["resume_text"] = resume_text
-            st.session_state["resume_skills"] = resume_skills
-            st.session_state["job_analysis"] = job_analysis
-            st.session_state["resume_sections"] = resume_sections
-            st.session_state["match_results"] = match_results
-            st.session_state["resume_filename"] = uploaded_file.name
-            st.session_state["analyzed_job_description"] = job_description
-
-            st.session_state.pop("ai_career_report", None)
-            st.session_state.pop("ai_interview_questions", None)
-
-            st.success("Resume analysis completed successfully.")
-
-        except Exception as error:
-
-            st.error("An error occurred during resume analysis.")
-            st.exception(error)
-
-
-# --------------------------------------------------
-# DISPLAY RESUME MATCHING RESULTS
-# --------------------------------------------------
-
-if "match_results" in st.session_state:
-
+if "match_results" not in st.session_state:
+    st.markdown("### Start with your profile")
+    one, two = st.columns(2)
+    with one:
+        st.markdown('<div class="card"><div class="eyebrow">Step 1</div><h3>Upload your resume</h3><p>Use the left panel to add a PDF or DOCX. We’ll extract skills and resume sections for this session.</p></div>', unsafe_allow_html=True)
+    with two:
+        st.markdown('<div class="card"><div class="eyebrow">Step 2</div><h3>Choose a target role</h3><p>Paste the job description and CareerLens will compare detected requirements against your resume.</p></div>', unsafe_allow_html=True)
+    st.info("Your analysis appears here after you select **Analyze my fit** in the left panel.")
+else:
     results = st.session_state["match_results"]
     analysis = st.session_state["job_analysis"]
     resume_skills = st.session_state["resume_skills"]
     sections = st.session_state["resume_sections"]
+    st.markdown(f'<div class="eyebrow">CURRENT PROFILE · {st.session_state.get("resume_filename", "Resume")}</div>', unsafe_allow_html=True)
 
-    st.divider()
-    st.header("Resume Matching Dashboard")
-
-    # Required skill coverage
-
-    st.subheader("1. Required Skill Coverage")
-
-    if results["coverage"] is None:
-
-        st.warning(
-            "No recognized required skills were detected "
-            "in the job description."
-        )
-
-    else:
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric(
-            "Required Skill Coverage",
-            f"{results['coverage']}%",
-        )
-
-        col2.metric(
-            "Matched Skills",
-            results["total_matched"],
-        )
-
-        col3.metric(
-            "Missing Skills",
-            results["total_missing"],
-        )
-
-        st.progress(results["coverage"] / 100)
-
-        st.caption(
-            "This percentage represents recognized required skills "
-            "found in your resume. It is not a hiring probability."
-        )
-
-    # Required skills
-
-    st.subheader("2. Required Skills")
-
-    if results["matched_skills"]:
-
-        st.success(
-            "Matched: " + ", ".join(results["matched_skills"])
-        )
-
-    if results["missing_skills"]:
-
-        st.warning(
-            "Missing: " + ", ".join(results["missing_skills"])
-        )
-
-    if not results["matched_skills"] and not results["missing_skills"]:
-
-        st.info("No recognized required skills were found.")
-
-    # Preferred skills
-
-    st.subheader("3. Preferred Skills")
-
-    preferred = analysis["preferred_skills"]
-
-    if preferred:
-
-        for category, skills in preferred.items():
-
-            st.write(f"**{category}:** {', '.join(skills)}")
-
-    else:
-
-        st.info("No preferred skills were detected.")
-
-    # Keywords
-
-    st.subheader("4. Important Job Keywords")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        st.markdown("**Required keywords**")
-
-        if analysis["required_keywords"]:
-
-            st.write(", ".join(analysis["required_keywords"]))
-
+    if page == "Overview":
+        st.subheader("Your fit snapshot")
+        c1, c2, c3 = st.columns(3)
+        coverage = results["coverage"]
+        c1.metric("Required skill coverage", f"{coverage:.0f}%" if coverage is not None else "—")
+        c2.metric("Skills matched", results["total_matched"])
+        c3.metric("Skills to build", results["total_missing"])
+        if coverage is not None:
+            st.progress(coverage / 100)
+        st.caption("Coverage reflects detected skills only. It is not a hiring probability or a complete assessment of experience.")
+        left, right = st.columns([1.05, 1])
+        with left:
+            st.markdown("### Strong matches")
+            show_pills(results["matched_skills"])
+            st.markdown("### Priority gaps")
+            show_pills(results["missing_skills"], missing=True)
+        with right:
+            st.markdown("### Preferred skills")
+            if analysis["preferred_skills"]:
+                for category, skills in analysis["preferred_skills"].items():
+                    st.write(f"**{category}** · {', '.join(skills)}")
+            else:
+                st.caption("No separate preferred skills were identified.")
+            if analysis["qualifications"]:
+                st.markdown("### Qualifications mentioned")
+                for item in analysis["qualifications"]:
+                    st.write(f"• {item}")
+        st.markdown("### Skill map")
+        if results["category_results"]:
+            for category, details in results["category_results"].items():
+                with st.expander(f"{category} · {len(details['matched'])}/{details['required_count']} matched"):
+                    if details["matched"]:
+                        st.write("Matched: " + ", ".join(details["matched"]))
+                    if details["missing"]:
+                        st.write("To build: " + ", ".join(details["missing"]))
         else:
+            st.info("No recognized skills found in the job description. Add specific technologies or competencies for a more useful comparison.")
+        with st.expander("Resume details"):
+            st.markdown("**Detected skills**")
+            for category, skills in resume_skills.items():
+                st.write(f"{category}: {', '.join(skills)}")
+            for title in ("Education", "Experience", "Projects"):
+                st.markdown(f"**{title}**")
+                values = sections.get(title, [])
+                st.write("\n".join(f"• {item}" for item in values) if values else "No clear section detected.")
+            st.download_button("Download extracted resume text", data=st.session_state["resume_text"], file_name="extracted_resume.txt", mime="text/plain")
 
-            st.info("No recognized required keywords found.")
+    elif page == "Market pulse":
+        st.subheader("Market pulse")
+        st.write("Search current web results related to your target role, then summarize recurring skills and trends.")
+        if st.button("Search the job market", type="primary", key="research_market"):
+            try:
+                from src.ai.semantic_matcher import SemanticMatcher
+                with st.spinner("Searching sources and preparing your market summary…"):
+                    st.session_state["market_research"] = SemanticMatcher().research_job_market(st.session_state["analyzed_job_description"])
+            except (ValueError, RuntimeError) as error:
+                st.error(str(error))
+            except Exception:
+                st.error("Market research couldn’t run. Check the configured AI and search keys, then try again.")
+        research = st.session_state.get("market_research")
+        if research:
+            st.markdown(f"**Likely target role:** {research['job_role']}")
+            st.markdown(research["report"])
+            st.download_button("Download market report", data=research["report"], file_name="market_report.md", mime="text/markdown")
+            st.markdown("### Sources to review")
+            st.caption("Search snippets can be incomplete. Open source pages to verify dates, vacancies, and requirements.")
+            show_sources(research["sources"])
 
-    with col2:
-
-        st.markdown("**Preferred keywords**")
-
-        if analysis["preferred_keywords"]:
-
-            st.write(", ".join(analysis["preferred_keywords"]))
-
-        else:
-
-            st.info("No recognized preferred keywords found.")
-
-    # Qualifications
-
-    st.subheader("5. Qualifications and Experience")
-
-    if analysis["qualifications"]:
-
-        for item in analysis["qualifications"]:
-
-            st.write(f"- {item}")
+    elif page == "Career plan":
+        st.subheader("Career plan")
+        st.write("Get tailored recommendations based on your resume, role description, and detected skill gaps.")
+        if st.button("Create my career plan", type="primary", key="generate_career_plan"):
+            system = "You are an expert ATS resume analyst and career coach. Never invent experience, qualifications, or skills. Distinguish missing skills from skills that are merely not mentioned. Give practical recommendations and do not guarantee employment."
+            prompt = f"""RESUME:\n{st.session_state['resume_text']}\n\nJOB DESCRIPTION:\n{st.session_state['analyzed_job_description']}\n\nMATCHED SKILLS:\n{results['matched_skills']}\n\nMISSING SKILLS:\n{results['missing_skills']}\n\nCOVERAGE:\n{results['coverage']}%\n\nPrepare a specific career report covering candidate summary, fit, strengths, gaps, resume improvements, projects, learning roadmap, interview preparation, qualifications, and a priority action plan."""
+            try:
+                with st.spinner("Building your personalized career plan…"):
+                    st.session_state["ai_career_report"] = generate_ai(system, prompt)
+            except (ValueError, RuntimeError) as error:
+                st.error(str(error))
+            except Exception:
+                st.error("The career plan couldn’t be generated. Check the Groq key and try again.")
+        report = st.session_state.get("ai_career_report")
+        if report:
+            st.markdown(report)
+            st.download_button("Download career plan", data=report, file_name="career_plan.md", mime="text/markdown")
 
     else:
-
-        st.info("No clear qualification or experience criteria detected.")
-
-    if not analysis["section_headings_found"]:
-
-        st.caption(
-            "No recognizable required/preferred headings were found. "
-            "Detected skills were treated as required by default."
-        )
-
-    # Resume information
-
-    st.divider()
-    st.header("Resume Information")
-
-    st.subheader("6. Detected Resume Skills")
-
-    if resume_skills:
-
-        for category, skills in resume_skills.items():
-
-            st.write(f"**{category}:** {', '.join(skills)}")
-
-    else:
-
-        st.info("No predefined skills were detected.")
-
-    with st.expander("Education"):
-
-        for item in sections["Education"]:
-            st.write(f"- {item}")
-
-        if not sections["Education"]:
-            st.info("No clear education section detected.")
-
-    with st.expander("Experience"):
-
-        for item in sections["Experience"]:
-            st.write(f"- {item}")
-
-        if not sections["Experience"]:
-            st.info("No clear experience section detected.")
-
-    with st.expander("Projects"):
-
-        for item in sections["Projects"]:
-            st.write(f"- {item}")
-
-        if not sections["Projects"]:
-            st.info("No clear project section detected.")
-
-    with st.expander("Complete Extracted Resume Text"):
-
-        st.text_area(
-            "Resume content",
-            value=st.session_state["resume_text"],
-            height=300,
-            disabled=True,
-        )
-
-    st.download_button(
-        "Download Extracted Resume Text",
-        data=st.session_state["resume_text"],
-        file_name="extracted_resume.txt",
-        mime="text/plain",
-    )
-
-
-    # --------------------------------------------------
-    # AI CAREER REPORT
-    # --------------------------------------------------
-
-    st.divider()
-    st.header("5. AI Career Preparation")
-
-    if st.button(
-        "Generate AI Career Report",
-        use_container_width=True,
-    ):
-
-        try:
-
-            from src.ai.semantic_matcher import SemanticMatcher
-
-            with st.spinner("Groq is analyzing your resume..."):
-
-                ai = SemanticMatcher()
-
-                system_prompt = """
-You are an expert ATS resume analyst and career coach.
-
-Compare the resume with the supplied job description.
-
-Never invent experience, qualifications or skills.
-Distinguish missing skills from skills that are not mentioned.
-Give specific, practical recommendations.
-Do not guarantee employment.
-"""
-
-                user_prompt = f"""
-RESUME:
-
-{st.session_state["resume_text"]}
-
-JOB DESCRIPTION:
-
-{st.session_state["analyzed_job_description"]}
-
-MATCHED SKILLS:
-
-{results["matched_skills"]}
-
-MISSING SKILLS:
-
-{results["missing_skills"]}
-
-REQUIRED SKILL COVERAGE:
-
-{results["coverage"]}%
-
-Prepare a detailed report:
-
-1. Candidate profile summary
-2. Overall job compatibility
-3. Strongest matching skills
-4. Missing and unclear skills
-5. Resume improvement recommendations
-6. Practical project recommendations
-7. Beginner-friendly learning roadmap
-8. Technical interview preparation
-9. Qualification and experience assessment
-10. Priority action plan
-
-Be specific to this candidate.
-"""
-
-                report = ai.generate_response(
-                    system_prompt,
-                    user_prompt,
-                )
-
-                st.session_state["ai_career_report"] = report
-
-            st.success("AI career report generated.")
-
-        except Exception as error:
-
-            st.error("Unable to generate the AI career report.")
-            st.exception(error)
-
-    if "ai_career_report" in st.session_state:
-
-        st.subheader("Personalized AI Career Report")
-
-        st.markdown(
-            st.session_state["ai_career_report"]
-        )
-
-        st.download_button(
-            "Download AI Career Report",
-            data=st.session_state["ai_career_report"],
-            file_name="ai_career_report.md",
-            mime="text/markdown",
-        )
-
-
-    # --------------------------------------------------
-    # AI INTERVIEW PREPARATION
-    # --------------------------------------------------
-
-    st.divider()
-    st.header("6. AI Interview Preparation")
-
-    if st.button(
-        "Generate Interview Questions",
-        use_container_width=True,
-    ):
-
-        try:
-
-            from src.ai.semantic_matcher import SemanticMatcher
-
-            with st.spinner("Generating interview questions..."):
-
-                ai = SemanticMatcher()
-
-                system_prompt = """
-You are an experienced technical interviewer.
-
-Generate realistic interview questions based on the
-candidate's resume and the target job description.
-
-Adjust difficulty to the candidate's experience.
-"""
-
-                user_prompt = f"""
-JOB DESCRIPTION:
-
-{st.session_state["analyzed_job_description"]}
-
-RESUME:
-
-{st.session_state["resume_text"]}
-
-Generate:
-
-1. 10 technical questions
-2. 5 programming and practical questions
-3. 5 project and experience questions
-4. 5 HR and behavioral questions
-5. 5 questions about missing skills
-
-For every question explain:
-- Why it may be asked.
-- Important points for answering it.
-"""
-
-                questions = ai.generate_response(
-                    system_prompt,
-                    user_prompt,
-                )
-
-                st.session_state["ai_interview_questions"] = questions
-
-            st.success("Interview questions generated.")
-
-        except Exception as error:
-
-            st.error("Unable to generate interview questions.")
-            st.exception(error)
-
-    if "ai_interview_questions" in st.session_state:
-
-        st.subheader("Interview Preparation Questions")
-
-        st.markdown(
-            st.session_state["ai_interview_questions"]
-        )
-
-        st.download_button(
-            "Download Interview Questions",
-            data=st.session_state["ai_interview_questions"],
-            file_name="interview_preparation.md",
-            mime="text/markdown",
-        )
-
-
-# --------------------------------------------------
-# FOOTER
-# --------------------------------------------------
+        st.subheader("Interview lab")
+        st.write("Practice technical, practical, project, and behavioral questions tailored to the role.")
+        if st.button("Generate interview practice set", type="primary", key="generate_interview"):
+            system = "You are an experienced technical interviewer. Create realistic questions from the candidate's resume and target job description. Adjust difficulty to experience and do not assume skills not shown."
+            prompt = f"""JOB DESCRIPTION:\n{st.session_state['analyzed_job_description']}\n\nRESUME:\n{st.session_state['resume_text']}\n\nGenerate 10 technical, 5 practical/programming, 5 project/experience, 5 behavioral, and 5 missing-skill questions. For every question explain why it may be asked and key points for answering."""
+            try:
+                with st.spinner("Preparing your interview practice set…"):
+                    st.session_state["ai_interview_questions"] = generate_ai(system, prompt)
+            except (ValueError, RuntimeError) as error:
+                st.error(str(error))
+            except Exception:
+                st.error("Interview prep couldn’t be generated. Check the Groq key and try again.")
+        questions = st.session_state.get("ai_interview_questions")
+        if questions:
+            st.markdown(questions)
+            st.download_button("Download interview practice", data=questions, file_name="interview_practice.md", mime="text/markdown")
 
 st.divider()
+st.caption("CareerLens · A practical coaching aid. Verify market findings at the original source and treat AI suggestions as guidance, not guarantees.")
 
-st.caption(
-    "Resume Job Coach | Powered by Groq AI and Tavily Search. "
-    "Research results should be verified against original sources."
-)
+
