@@ -141,6 +141,11 @@ with st.sidebar:
     with st.form("profile_form", clear_on_submit=False):
         uploaded_file = st.file_uploader("Resume file", type=["pdf", "docx"], help="PDF and Word documents are supported.")
         job_description = st.text_area("Target job description", height=200, placeholder="Paste the role description, requirements, and qualifications…")
+        research_online = st.checkbox(
+            "Find relevant skills online",
+            value=True,
+            help="Search current job postings and company career pages related to this JD. Uses Groq and Tavily.",
+        )
         analyze_clicked = st.form_submit_button("✦  Analyze my fit", type="primary", width="stretch")
     with st.expander("AI setup"):
         st.write("Career plan and interview generation need Groq. Live Market pulse also needs Tavily.")
@@ -160,12 +165,13 @@ if analyze_clicked:
         st.session_state["notice_error"] = "Paste a target job description to continue."
     else:
         try:
-            with st.spinner("Reading your resume and mapping role requirements…"):
+            with st.spinner("Reading your resume and mapping the job description…"):
                 resume_text = parser.extract_text(uploaded_file)
                 resume_skills = extractor.extract_skills(resume_text)
                 job_analysis = extractor.analyze_job_description(job_description)
                 sections = extractor.extract_sections(resume_text)
                 results = matcher.compare(resume_skills, job_analysis["required_skills"])
+
             st.session_state.update(
                 resume_text=resume_text,
                 resume_skills=resume_skills,
@@ -175,9 +181,34 @@ if analyze_clicked:
                 resume_filename=uploaded_file.name,
                 analyzed_job_description=job_description,
             )
-            for key in ("market_research", "ai_career_report", "ai_interview_questions"):
+
+            for key in (
+                "market_research",
+                "ai_career_report",
+                "ai_interview_questions",
+                "online_skill_research",
+                "online_skill_research_error",
+            ):
                 st.session_state.pop(key, None)
-            st.session_state["notice_success"] = "Your fit analysis is ready."
+
+            if research_online:
+                try:
+                    from src.ai.semantic_matcher import SemanticMatcher
+
+                    with st.spinner("Searching current job postings and career pages for skills related to this JD…"):
+                        online_results = SemanticMatcher().research_job_skills(job_description)
+
+                    st.session_state["online_skill_research"] = online_results
+                except Exception as error:
+                    st.session_state["online_skill_research_error"] = str(error)
+            else:
+                st.session_state["online_skill_research_skipped"] = True
+
+            if "online_skill_research" in st.session_state:
+                st.session_state["notice_success"] = "Resume fit analysis and online skill research are ready."
+            else:
+                st.session_state["notice_success"] = "Resume fit analysis is ready. Online skill research was not completed."
+
         except (ValueError, RuntimeError) as error:
             st.session_state["notice_error"] = str(error)
         except Exception:
@@ -223,6 +254,63 @@ else:
         if coverage is not None:
             st.progress(coverage / 100)
         st.caption("Coverage reflects detected skills only. It is not a hiring probability or a complete assessment of experience.")
+
+        st.markdown("### Skills researched online for this job description")
+        online = st.session_state.get("online_skill_research")
+
+        if online:
+            st.caption(
+                f"Detected role: {online.get('job_role', 'Target role')} · "
+                f"{len(online.get('sources', []))} web results reviewed"
+            )
+            online_left, online_right = st.columns(2)
+            with online_left:
+                st.markdown("**Skills stated in the company JD**")
+                show_pills(online.get("jd_required_skills", []))
+                if online.get("jd_preferred_skills"):
+                    st.markdown("**Preferred in the company JD**")
+                    show_pills(online.get("jd_preferred_skills", []))
+            with online_right:
+                st.markdown("**Skills found in current job-market sources**")
+                show_pills(online.get("market_required_skills", []))
+                if online.get("market_preferred_skills"):
+                    st.markdown("**Commonly preferred in those sources**")
+                    show_pills(online.get("market_preferred_skills", []))
+
+            st.markdown("**Overlap between this JD and the online market**")
+            show_pills(online.get("shared_skills", []))
+            if online.get("additional_market_skills"):
+                st.markdown("**Additional skills worth considering**")
+                show_pills(online.get("additional_market_skills", []))
+
+            if online.get("market_tools_and_platforms"):
+                st.markdown("**Tools and platforms found online**")
+                show_pills(online.get("market_tools_and_platforms", []))
+
+            for insight in online.get("market_insights", []):
+                st.write(f"• {insight}")
+            if online.get("research_limitations"):
+                st.caption(online["research_limitations"])
+
+            with st.expander("View online research sources"):
+                show_sources(online.get("sources", []))
+        elif st.session_state.get("online_skill_research_error"):
+            st.warning(
+                "Online skill research did not complete: "
+                + st.session_state["online_skill_research_error"]
+            )
+            st.caption(
+                "The resume comparison below is still based on the local skill vocabulary. "
+                "Check the Groq and Tavily setup, then analyze the JD again."
+            )
+        elif st.session_state.get("online_skill_research_skipped"):
+            st.info("Online skill research was turned off for this analysis.")
+        else:
+            st.info(
+                "Online skill research has not run yet. Keep “Find relevant skills online” "
+                "selected in the sidebar and choose “Analyze my fit”."
+            )
+
         left, right = st.columns([1.05, 1])
         with left:
             st.markdown("### Strong matches")
