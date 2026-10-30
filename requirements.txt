@@ -1,0 +1,7 @@
+streamlit
+fastapi
+uvicorn
+pdfplumber
+python-docx
+pandas
+numpy
