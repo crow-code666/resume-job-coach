@@ -2,6 +2,7 @@
 import streamlit as st
 
 from src.resume_parser.parser import ResumeParser
+from src.matching.skill_extractor import SkillExtractor
 
 
 # -------------------- PAGE CONFIGURATION --------------------
@@ -15,6 +16,7 @@ st.set_page_config(
 # -------------------- INITIALIZATION --------------------
 
 parser = ResumeParser()
+skill_extractor = SkillExtractor()
 
 # -------------------- HEADER --------------------
 
@@ -22,8 +24,7 @@ st.title("📄 Resume–Job Matching and Skill-Gap Coach")
 
 st.write(
     "Upload your resume and enter a target job description. "
-    "The application will extract your resume content and prepare "
-    "it for job matching and skill-gap analysis."
+    "Analyze your skills and prepare for intelligent job matching."
 )
 
 st.divider()
@@ -34,96 +35,153 @@ st.subheader("1. Upload Your Resume")
 
 uploaded_file = st.file_uploader(
     "Choose your resume",
-    type=["pdf", "docx"],
-    help="Supported formats: PDF and DOCX"
+    type=["pdf", "docx"]
 )
 
 # -------------------- JOB DESCRIPTION --------------------
 
-st.subheader("2. Enter the Target Job Description")
+st.subheader("2. Target Job Description")
 
 job_description = st.text_area(
-    "Paste the job description here",
+    "Paste the job description",
     height=220,
-    placeholder=(
-        "Paste the complete job description here, including "
-        "required skills, qualifications and experience..."
-    )
+    placeholder="Paste the job description here..."
 )
 
-st.divider()
-
-# -------------------- PROCESSING --------------------
+# -------------------- ANALYSIS --------------------
 
 if st.button("Analyze Resume", type="primary", use_container_width=True):
 
     if uploaded_file is None:
-        st.error("Please upload your resume first.")
+        st.error("Please upload your resume.")
 
     elif not job_description.strip():
         st.error("Please enter a job description.")
 
     else:
         try:
-            with st.spinner("Extracting resume text..."):
+            with st.spinner("Analyzing your resume..."):
                 resume_text = parser.extract_text(uploaded_file)
 
-            st.success("Resume text extracted successfully!")
+                extracted_skills = skill_extractor.extract_skills(
+                    resume_text
+                )
+
+                extracted_sections = skill_extractor.extract_sections(
+                    resume_text
+                )
 
             st.session_state["resume_text"] = resume_text
             st.session_state["job_description"] = job_description
             st.session_state["resume_filename"] = uploaded_file.name
+            st.session_state["extracted_skills"] = extracted_skills
+            st.session_state["extracted_sections"] = extracted_sections
+
+            st.success("Resume analysis completed!")
 
         except ValueError as error:
             st.error(str(error))
 
         except Exception as error:
-            st.error(
-                "Something went wrong while processing your resume."
-            )
+            st.error("An error occurred during resume analysis.")
             st.exception(error)
 
-# -------------------- RESULTS --------------------
+# -------------------- DISPLAY RESULTS --------------------
 
 if "resume_text" in st.session_state:
 
     st.divider()
-    st.subheader("3. Extracted Resume Content")
-
-    st.caption(
-        f"File: {st.session_state['resume_filename']}"
-    )
+    st.header("📊 Resume Analysis Dashboard")
 
     resume_text = st.session_state["resume_text"]
+    extracted_skills = st.session_state["extracted_skills"]
+    extracted_sections = st.session_state["extracted_sections"]
 
-    word_count = len(resume_text.split())
-    character_count = len(resume_text)
-
-    col1, col2 = st.columns(2)
+    # Resume statistics
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Total Words", word_count)
+        st.metric("Total Words", len(resume_text.split()))
 
     with col2:
-        st.metric("Total Characters", character_count)
+        total_skills = sum(
+            len(skills) for skills in extracted_skills.values()
+        )
+        st.metric("Skills Identified", total_skills)
 
-    with st.expander("View Extracted Resume Text", expanded=True):
+    with col3:
+        st.metric(
+            "Skill Categories",
+            len(extracted_skills)
+        )
+
+    # Skills
+    st.subheader("1. Identified Skills")
+
+    if extracted_skills:
+        for category, skills in extracted_skills.items():
+            with st.expander(
+                f"{category} ({len(skills)})",
+                expanded=True
+            ):
+                st.write(" • ".join(skills))
+    else:
+        st.warning(
+            "No skills from the current skill database were detected. "
+            "You can still review the extracted resume text below."
+        )
+
+    # Education
+    st.subheader("2. Education")
+
+    education = extracted_sections["Education"]
+
+    if education:
+        for item in education:
+            st.write(f"• {item}")
+    else:
+        st.info("No clear education section was detected.")
+
+    # Experience
+    st.subheader("3. Work Experience")
+
+    experience = extracted_sections["Experience"]
+
+    if experience:
+        for item in experience:
+            st.write(f"• {item}")
+    else:
+        st.info("No clear experience section was detected.")
+
+    # Projects
+    st.subheader("4. Projects")
+
+    projects = extracted_sections["Projects"]
+
+    if projects:
+        for item in projects:
+            st.write(f"• {item}")
+    else:
+        st.info("No clear project section was detected.")
+
+    # Original resume text
+    with st.expander("View Complete Extracted Resume Text"):
         st.text_area(
-            "Resume content",
+            "Extracted content",
             value=resume_text,
             height=350,
             disabled=True
         )
 
     st.download_button(
-        label="Download Extracted Text",
+        "Download Extracted Resume Text",
         data=resume_text,
         file_name="extracted_resume.txt",
-        mime="text/plain",
-        use_container_width=True
+        mime="text/plain"
     )
 
     st.info(
-        "Resume extraction is complete. "
-        "Skill extraction and job matching will be added in the next phase."
+        "This version uses a predefined skill database and basic "
+        "section detection. Semantic AI recognition and job matching "
+        "will be added in upcoming phases."
     )
