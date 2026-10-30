@@ -1,4 +1,5 @@
 
+import json
 import os
 
 from dotenv import load_dotenv
@@ -395,3 +396,180 @@ Distinguish verified source information from general advice.
             "sources": unique_results,
             "queries": queries,
         }
+
+    def research_job_skills(self, job_description, max_results=5):
+        """
+        Search current job-market sources for skills relevant to a supplied JD.
+
+        The response keeps requirements from the supplied JD separate from
+        skills supported by the retrieved online sources.
+        """
+        if not job_description or not job_description.strip():
+            raise ValueError("Job description cannot be empty.")
+
+        if self.search_client is None:
+            raise ValueError(
+                "TAVILY_API_KEY is not configured. Add it to "
+                ".streamlit/secrets.toml or your environment variables "
+                "to use online skill research."
+            )
+
+        role_prompt = """
+Identify the main job title in this job description.
+Return only the job title, without explanation.
+If the title is unclear, choose the closest role supported by the text.
+"""
+        job_role = self.generate_response(
+            role_prompt,
+            job_description[:12000],
+        ).strip()
+
+        queries = [
+            f'"{job_role}" job postings required skills technologies India 2026',
+            f'"{job_role}" company careers job description required skills global 2026',
+            f'"{job_role}" hiring requirements tools frameworks qualifications 2026',
+        ]
+
+        results = []
+        seen_urls = set()
+        for query in queries:
+            for item in self.search_web(query, max_results=max_results):
+                url = item.get("url", "").strip()
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    results.append(item)
+
+        if not results:
+            raise RuntimeError(
+                "The web search returned no usable sources for this role. "
+                "Try again or check your Tavily account."
+            )
+
+        source_text = "\n\n".join(
+            f"SOURCE {index}\n"
+            f"Title: {item.get('title', 'Untitled')}\n"
+            f"URL: {item.get('url', '')}\n"
+            f"Extract: {item.get('content', '')}"
+            for index, item in enumerate(results, start=1)
+        )
+
+        system_prompt = """
+You are a careful job-market researcher and skills analyst.
+Use the supplied job description and retrieved web-search source excerpts.
+
+Return ONLY one valid JSON object. Do not use Markdown or code fences.
+Do not invent skills, qualifications, companies, vacancies, or statistics.
+
+Keep the two evidence sets separate:
+- JD arrays must contain skills explicitly required or preferred by the supplied JD.
+- Market arrays must contain skills supported by the retrieved job-posting or company-career source excerpts.
+- Do not copy a JD skill into the market arrays unless the online excerpts also support it.
+- If evidence is insufficient, return an empty array rather than guessing.
+- Use concise skill/tool names, not sentences.
+- Distinguish required from preferred only when the source supports that distinction.
+
+Use exactly these keys:
+{
+  "job_role": "string",
+  "jd_required_skills": ["string"],
+  "jd_preferred_skills": ["string"],
+  "market_required_skills": ["string"],
+  "market_preferred_skills": ["string"],
+  "market_tools_and_platforms": ["string"],
+  "market_insights": ["short evidence-based observation"],
+  "research_limitations": "short string"
+}
+"""
+        user_prompt = f"""
+JOB DESCRIPTION SUPPLIED BY THE USER:
+{job_description[:12000]}
+
+LIVE WEB SEARCH EXCERPTS:
+{source_text}
+
+Identify:
+1. Technical skills and technologies required by the supplied JD.
+2. Preferred skills in the supplied JD.
+3. Skills explicitly supported by the online sources for comparable roles.
+4. Tools and platforms found in those sources.
+5. A few short observations grounded in the supplied excerpts.
+
+Do not claim that a search excerpt proves a vacancy is still open.
+Do not create frequency counts unless they can be calculated directly
+from the provided source excerpts.
+"""
+        raw = self.generate_response(system_prompt, user_prompt).strip()
+        cleaned = raw
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3].strip()
+
+        try:
+            data = json.loads(cleaned)
+        except json.JSONDecodeError:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start < 0 or end <= start:
+                raise RuntimeError(
+                    "AI returned an unreadable skills report. Please run the research again."
+                )
+            try:
+                data = json.loads(cleaned[start:end + 1])
+            except json.JSONDecodeError as error:
+                raise RuntimeError(
+                    "AI returned an unreadable skills report. Please run the research again."
+                ) from error
+
+        def clean_list(value):
+            if not isinstance(value, list):
+                return []
+            cleaned_items = []
+            seen = set()
+            for entry in value:
+                if not isinstance(entry, str):
+                    continue
+                item = " ".join(entry.split()).strip(" •-")
+                key = item.casefold()
+                if item and len(item) <= 80 and key not in seen:
+                    seen.add(key)
+                    cleaned_items.append(item)
+            return cleaned_items[:40]
+
+        jd_required = clean_list(data.get("jd_required_skills"))
+        jd_preferred = clean_list(data.get("jd_preferred_skills"))
+        market_required = clean_list(data.get("market_required_skills"))
+        market_preferred = clean_list(data.get("market_preferred_skills"))
+        market_tools = clean_list(data.get("market_tools_and_platforms"))
+        insights = clean_list(data.get("market_insights"))
+
+        jd_all = {item.casefold() for item in jd_required + jd_preferred}
+        market_all = market_required + market_preferred + market_tools
+        market_all_unique = clean_list(market_all)
+        shared = [
+            item for item in market_all_unique
+            if item.casefold() in jd_all
+        ]
+        additional = [
+            item for item in market_all_unique
+            if item.casefold() not in jd_all
+        ]
+
+        return {
+            "job_role": str(data.get("job_role") or job_role).strip(),
+            "jd_required_skills": jd_required,
+            "jd_preferred_skills": jd_preferred,
+            "market_required_skills": market_required,
+            "market_preferred_skills": market_preferred,
+            "market_tools_and_platforms": market_tools,
+            "shared_skills": shared,
+            "additional_market_skills": additional,
+            "market_insights": insights,
+            "research_limitations": str(
+                data.get("research_limitations") or
+                "Search summaries are preliminary. Check the original job and company career pages."
+            ),
+            "sources": results,
+            "queries": queries,
+        }
+
