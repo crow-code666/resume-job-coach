@@ -159,60 +159,113 @@ with st.sidebar:
     st.caption("Your resume is processed for this session. AI features send selected text to the configured provider.")
 
 if analyze_clicked:
-    if uploaded_file is None:
-        st.session_state["notice_error"] = "Choose a PDF or DOCX resume to continue."
-    elif not job_description.strip():
+    if not job_description.strip():
         st.session_state["notice_error"] = "Paste a target job description to continue."
     else:
-        try:
-            with st.spinner("Reading your resume and mapping the job description…"):
-                resume_text = parser.extract_text(uploaded_file)
-                resume_skills = extractor.extract_skills(resume_text)
-                job_analysis = extractor.analyze_job_description(job_description)
-                sections = extractor.extract_sections(resume_text)
-                results = matcher.compare(resume_skills, job_analysis["required_skills"])
+        # Every new JD submission starts a fresh research result set.
+        for key in (
+            "market_research",
+            "ai_career_report",
+            "ai_interview_questions",
+            "online_skill_research",
+            "online_skill_research_error",
+            "online_skill_research_skipped",
+        ):
+            st.session_state.pop(key, None)
 
-            st.session_state.update(
-                resume_text=resume_text,
-                resume_skills=resume_skills,
-                job_analysis=job_analysis,
-                resume_sections=sections,
-                match_results=results,
-                resume_filename=uploaded_file.name,
-                analyzed_job_description=job_description,
-            )
+        st.session_state["analyzed_job_description"] = job_description
 
+        # Resume comparison is optional. JD research can run on its own.
+        if uploaded_file is not None:
+            try:
+                with st.spinner("Reading your resume and mapping role requirements…"):
+                    resume_text = parser.extract_text(uploaded_file)
+                    resume_skills = extractor.extract_skills(resume_text)
+                    job_analysis = extractor.analyze_job_description(job_description)
+                    sections = extractor.extract_sections(resume_text)
+                    results = matcher.compare(
+                        resume_skills,
+                        job_analysis["required_skills"],
+                    )
+
+                st.session_state.update(
+                    resume_text=resume_text,
+                    resume_skills=resume_skills,
+                    job_analysis=job_analysis,
+                    resume_sections=sections,
+                    match_results=results,
+                    resume_filename=uploaded_file.name,
+                )
+            except Exception as error:
+                st.session_state["notice_error"] = (
+                    "The JD was saved, but the resume could not be analyzed: "
+                    + str(error)
+                )
+                for key in (
+                    "resume_text",
+                    "resume_skills",
+                    "job_analysis",
+                    "resume_sections",
+                    "match_results",
+                    "resume_filename",
+                ):
+                    st.session_state.pop(key, None)
+        else:
             for key in (
-                "market_research",
-                "ai_career_report",
-                "ai_interview_questions",
-                "online_skill_research",
-                "online_skill_research_error",
+                "resume_text",
+                "resume_skills",
+                "job_analysis",
+                "resume_sections",
+                "match_results",
+                "resume_filename",
             ):
                 st.session_state.pop(key, None)
 
-            if research_online:
-                try:
-                    from src.ai.semantic_matcher import SemanticMatcher
+        # Run online skills research even when the user has not uploaded a resume.
+        if research_online:
+            try:
+                from src.ai.semantic_matcher import SemanticMatcher
 
-                    with st.spinner("Searching current job postings and career pages for skills related to this JD…"):
-                        online_results = SemanticMatcher().research_job_skills(job_description)
+                with st.spinner(
+                    "Searching current job postings and company career pages "
+                    "for skills related to this JD…"
+                ):
+                    online_results = SemanticMatcher().research_job_skills(
+                        job_description
+                    )
 
-                    st.session_state["online_skill_research"] = online_results
-                except Exception as error:
-                    st.session_state["online_skill_research_error"] = str(error)
+                st.session_state["online_skill_research"] = online_results
+            except Exception as error:
+                st.session_state["online_skill_research_error"] = str(error)
+        else:
+            st.session_state["online_skill_research_skipped"] = True
+
+        if "online_skill_research" in st.session_state:
+            if "match_results" in st.session_state:
+                st.session_state["notice_success"] = (
+                    "Resume comparison and online JD skill research are ready."
+                )
             else:
-                st.session_state["online_skill_research_skipped"] = True
-
-            if "online_skill_research" in st.session_state:
-                st.session_state["notice_success"] = "Resume fit analysis and online skill research are ready."
-            else:
-                st.session_state["notice_success"] = "Resume fit analysis is ready. Online skill research was not completed."
-
-        except (ValueError, RuntimeError) as error:
-            st.session_state["notice_error"] = str(error)
-        except Exception:
-            st.session_state["notice_error"] = "We couldn’t read this file. Try a text-based PDF or DOCX document."
+                st.session_state["notice_success"] = (
+                    "Online JD skill research is ready. Upload a resume later "
+                    "to compare your skills."
+                )
+        elif research_online:
+            st.session_state["notice_error"] = (
+                "Online research could not be completed. "
+                + st.session_state.get(
+                    "online_skill_research_error",
+                    "Check your Groq and Tavily setup.",
+                )
+            )
+        elif "match_results" in st.session_state:
+            st.session_state["notice_success"] = (
+                "Resume fit analysis is ready. Online research was turned off."
+            )
+        else:
+            st.session_state["notice_success"] = (
+                "JD saved. Turn on online research or upload a resume to continue."
+            )
 
 st.markdown("""
 <div class="hero">
@@ -229,31 +282,51 @@ if st.session_state.get("notice_success"):
 
 page = st.segmented_control("Workspace section", ["Overview", "Market pulse", "Career plan", "Interview lab"], default="Overview", label_visibility="collapsed", key="workspace_page", width="stretch")
 
-if "match_results" not in st.session_state:
-    st.markdown("### Start with your profile")
+has_profile_or_research = (
+    "match_results" in st.session_state
+    or "online_skill_research" in st.session_state
+    or "online_skill_research_error" in st.session_state
+)
+
+if not has_profile_or_research:
+    st.markdown("### Start with your job description")
     one, two = st.columns(2)
     with one:
-        st.markdown('<div class="card"><div class="eyebrow">Step 1</div><h3>Upload your resume</h3><p>Use the left panel to add a PDF or DOCX. We’ll extract skills and resume sections for this session.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card"><div class="eyebrow">Option 1</div><h3>Research a company JD</h3><p>Paste a job description in the left panel and run online skill research. A resume is not required.</p></div>', unsafe_allow_html=True)
     with two:
-        st.markdown('<div class="card"><div class="eyebrow">Step 2</div><h3>Choose a target role</h3><p>Paste the job description and CareerLens will compare detected requirements against your resume.</p></div>', unsafe_allow_html=True)
-    st.info("Your analysis appears here after you select **Analyze my fit** in the left panel.")
+        st.markdown('<div class="card"><div class="eyebrow">Option 2</div><h3>Compare your resume</h3><p>Upload a PDF or DOCX as well to compare your detected skills with the role requirements.</p></div>', unsafe_allow_html=True)
+    st.info("Add a JD in the left panel and select **Analyze my fit**. Online research is enabled by default.")
 else:
-    results = st.session_state["match_results"]
-    analysis = st.session_state["job_analysis"]
-    resume_skills = st.session_state["resume_skills"]
-    sections = st.session_state["resume_sections"]
-    st.markdown(f'<div class="eyebrow">CURRENT PROFILE · {st.session_state.get("resume_filename", "Resume")}</div>', unsafe_allow_html=True)
+    results = st.session_state.get("match_results")
+    analysis = st.session_state.get("job_analysis")
+    resume_skills = st.session_state.get("resume_skills", {})
+    sections = st.session_state.get("resume_sections", {})
+    if results:
+        st.markdown(
+            f'<div class="eyebrow">CURRENT PROFILE · '
+            f'{st.session_state.get("resume_filename", "Resume")}</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="eyebrow">JOB DESCRIPTION RESEARCH · NO RESUME REQUIRED</div>',
+            unsafe_allow_html=True,
+        )
 
     if page == "Overview":
-        st.subheader("Your fit snapshot")
-        c1, c2, c3 = st.columns(3)
-        coverage = results["coverage"]
-        c1.metric("Required skill coverage", f"{coverage:.0f}%" if coverage is not None else "—")
-        c2.metric("Skills matched", results["total_matched"])
-        c3.metric("Skills to build", results["total_missing"])
-        if coverage is not None:
-            st.progress(coverage / 100)
-        st.caption("Coverage reflects detected skills only. It is not a hiring probability or a complete assessment of experience.")
+        if results:
+            st.subheader("Your fit snapshot")
+            c1, c2, c3 = st.columns(3)
+            coverage = results["coverage"]
+            c1.metric("Required skill coverage", f"{coverage:.0f}%" if coverage is not None else "—")
+            c2.metric("Skills matched", results["total_matched"])
+            c3.metric("Skills to build", results["total_missing"])
+            if coverage is not None:
+                st.progress(coverage / 100)
+            st.caption("Coverage reflects detected skills only. It is not a hiring probability or a complete assessment of experience.")
+        else:
+            st.subheader("Job description research")
+            st.caption("This research is based on the supplied JD and current online sources. Upload a resume whenever you want a personal skill-gap comparison.")
 
         st.markdown("### Skills researched online for this job description")
         online = st.session_state.get("online_skill_research")
@@ -311,47 +384,52 @@ else:
                 "selected in the sidebar and choose “Analyze my fit”."
             )
 
-        left, right = st.columns([1.05, 1])
-        with left:
-            st.markdown("### Strong matches")
-            show_pills(results["matched_skills"])
-            st.markdown("### Priority gaps")
-            show_pills(results["missing_skills"], missing=True)
-        with right:
-            st.markdown("### Preferred skills")
-            if analysis["preferred_skills"]:
-                for category, skills in analysis["preferred_skills"].items():
-                    st.write(f"**{category}** · {', '.join(skills)}")
+        if results:
+            left, right = st.columns([1.05, 1])
+            with left:
+                st.markdown("### Strong matches")
+                show_pills(results["matched_skills"])
+                st.markdown("### Priority gaps")
+                show_pills(results["missing_skills"], missing=True)
+            with right:
+                st.markdown("### Preferred skills")
+                if analysis["preferred_skills"]:
+                    for category, skills in analysis["preferred_skills"].items():
+                        st.write(f"**{category}** · {', '.join(skills)}")
+                else:
+                    st.caption("No separate preferred skills were identified.")
+                if analysis["qualifications"]:
+                    st.markdown("### Qualifications mentioned")
+                    for item in analysis["qualifications"]:
+                        st.write(f"• {item}")
+            st.markdown("### Skill map")
+            if results["category_results"]:
+                for category, details in results["category_results"].items():
+                    with st.expander(f"{category} · {len(details['matched'])}/{details['required_count']} matched"):
+                        if details["matched"]:
+                            st.write("Matched: " + ", ".join(details["matched"]))
+                        if details["missing"]:
+                            st.write("To build: " + ", ".join(details["missing"]))
             else:
-                st.caption("No separate preferred skills were identified.")
-            if analysis["qualifications"]:
-                st.markdown("### Qualifications mentioned")
-                for item in analysis["qualifications"]:
-                    st.write(f"• {item}")
-        st.markdown("### Skill map")
-        if results["category_results"]:
-            for category, details in results["category_results"].items():
-                with st.expander(f"{category} · {len(details['matched'])}/{details['required_count']} matched"):
-                    if details["matched"]:
-                        st.write("Matched: " + ", ".join(details["matched"]))
-                    if details["missing"]:
-                        st.write("To build: " + ", ".join(details["missing"]))
+                st.info("No recognized skills found in the job description. Add specific technologies or competencies for a more useful comparison.")
+            with st.expander("Resume details"):
+                st.markdown("**Detected skills**")
+                for category, skills in resume_skills.items():
+                    st.write(f"{category}: {', '.join(skills)}")
+                for title in ("Education", "Experience", "Projects"):
+                    st.markdown(f"**{title}**")
+                    values = sections.get(title, [])
+                    st.write("\n".join(f"• {item}" for item in values) if values else "No clear section detected.")
+                st.download_button("Download extracted resume text", data=st.session_state["resume_text"], file_name="extracted_resume.txt", mime="text/plain")
         else:
-            st.info("No recognized skills found in the job description. Add specific technologies or competencies for a more useful comparison.")
-        with st.expander("Resume details"):
-            st.markdown("**Detected skills**")
-            for category, skills in resume_skills.items():
-                st.write(f"{category}: {', '.join(skills)}")
-            for title in ("Education", "Experience", "Projects"):
-                st.markdown(f"**{title}**")
-                values = sections.get(title, [])
-                st.write("\n".join(f"• {item}" for item in values) if values else "No clear section detected.")
-            st.download_button("Download extracted resume text", data=st.session_state["resume_text"], file_name="extracted_resume.txt", mime="text/plain")
+            st.info("Resume comparison is not active. Upload a PDF or DOCX in the sidebar and run Analyze my fit to see matched and missing skills.")
 
     elif page == "Market pulse":
         st.subheader("Market pulse")
         st.write("Search current web results related to your target role, then summarize recurring skills and trends.")
-        if st.button("Search the job market", type="primary", key="research_market"):
+        if not st.session_state.get("analyzed_job_description"):
+            st.info("Paste a job description in the sidebar first.")
+        elif st.button("Search the job market", type="primary", key="research_market"):
             try:
                 from src.ai.semantic_matcher import SemanticMatcher
                 with st.spinner("Searching sources and preparing your market summary…"):
@@ -372,7 +450,9 @@ else:
     elif page == "Career plan":
         st.subheader("Career plan")
         st.write("Get tailored recommendations based on your resume, role description, and detected skill gaps.")
-        if st.button("Create my career plan", type="primary", key="generate_career_plan"):
+        if not results:
+            st.info("Upload and analyze a resume to create a personalized career plan.")
+        elif st.button("Create my career plan", type="primary", key="generate_career_plan"):
             system = "You are an expert ATS resume analyst and career coach. Never invent experience, qualifications, or skills. Distinguish missing skills from skills that are merely not mentioned. Give practical recommendations and do not guarantee employment."
             prompt = f"""RESUME:\n{st.session_state['resume_text']}\n\nJOB DESCRIPTION:\n{st.session_state['analyzed_job_description']}\n\nMATCHED SKILLS:\n{results['matched_skills']}\n\nMISSING SKILLS:\n{results['missing_skills']}\n\nCOVERAGE:\n{results['coverage']}%\n\nPrepare a specific career report covering candidate summary, fit, strengths, gaps, resume improvements, projects, learning roadmap, interview preparation, qualifications, and a priority action plan."""
             try:
@@ -390,7 +470,9 @@ else:
     else:
         st.subheader("Interview lab")
         st.write("Practice technical, practical, project, and behavioral questions tailored to the role.")
-        if st.button("Generate interview practice set", type="primary", key="generate_interview"):
+        if not results:
+            st.info("Upload and analyze a resume to generate personalized interview practice.")
+        elif st.button("Generate interview practice set", type="primary", key="generate_interview"):
             system = "You are an experienced technical interviewer. Create realistic questions from the candidate's resume and target job description. Adjust difficulty to experience and do not assume skills not shown."
             prompt = f"""JOB DESCRIPTION:\n{st.session_state['analyzed_job_description']}\n\nRESUME:\n{st.session_state['resume_text']}\n\nGenerate 10 technical, 5 practical/programming, 5 project/experience, 5 behavioral, and 5 missing-skill questions. For every question explain why it may be asked and key points for answering."""
             try:
