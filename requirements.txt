@@ -1,6 +1,0 @@
-streamlit>=1.57
-pdfplumber
-python-docx
-python-dotenv
-groq
-tavily-python
